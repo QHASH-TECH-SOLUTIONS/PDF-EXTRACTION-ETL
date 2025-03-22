@@ -55,6 +55,7 @@ async function extractDataFromPdf(pdfPath) {
         let extractedBreed = false; // Added flag to stop after extracting the breed
         let shouldUpdateData = false; // Added flag to control when to update data
         let hasPushedData = false; // Added flag to track if data has been pushed
+        let owners = []; // Array to store multiple owners
 
         lines.forEach((line, index) => {
             console.log(`Line ${index}:`, line); // Log each line with its index
@@ -89,6 +90,13 @@ async function extractDataFromPdf(pdfPath) {
             // Extract Breed (split at "Microchip:" or "Dam:")
             if (foundHorse && line.includes("Breed:")) {
                 currentHorse.breed = extractValue(line, 'Breed:');
+            }
+
+            if (line.includes("Owner at the Competition:")) {
+                const ownerMatch = line.match(/Owner at the Competition:\s*(.*)/);
+                if (ownerMatch) {
+                    owners.push(ownerMatch[1].trim());
+                }
             }
 
             // // Extract Show and Event Information
@@ -126,7 +134,12 @@ async function extractDataFromPdf(pdfPath) {
         });
 
         if (foundHorse) {
-            data.push(currentHorse);
+            owners.forEach(owner => {
+                data.push({
+                    ...currentHorse,
+                    owner: owner
+                });
+            });
         }
 
         // Write to CSV
@@ -165,5 +178,6 @@ function extractValue(line, label) {
     }
     return '';
 }
+
 
 extractDataFromPdf(inputPdfPath);
