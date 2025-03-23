@@ -2,12 +2,9 @@ const fs = require('fs');
 const pdf = require('pdf-parse');
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 
-// Path to the input PDF file
 const inputPdfPath = '/home/red-virus/Desktop/office/QHash/Running_Projects/pdf_Extractor/pdfs/sample5.pdf';
-// Path to the output CSV file
 const outputFilePath = 'output.csv';
 
-// Headers for the CSV file
 const headers = [
     { id: 'horseName', title: 'Horse Name' },
     { id: 'usefNumber', title: 'USEF #' },
@@ -27,8 +24,8 @@ const headers = [
     { id: 'placing', title: 'Placing' },
     { id: 'competed', title: 'Competed' },
     { id: 'money', title: 'Money' },
-    { id: 'rider', title: 'Rider' },
-    { id: 'zrd', title: 'ZRD' }
+    { id: 'zrd', title: 'ZRD' },
+    { id: 'rider', title: 'Rider' }
 ];
 
 // Array to hold the extracted data
@@ -44,18 +41,11 @@ async function extractDataFromPdf(pdfPath) {
 
         // Split the text into lines for processing
         const lines = text.split('\n');
-        
+
         let currentHorse = {};
-        let currentShow = {};
-        let currentSection = {};
         let foundHorse = false; // Flag to stop after finding the first horse
-        let extractedDam = false; // Flag to stop after extracting the dam
-        let extractedSire = false; // Flag to stop after extracting the sire
-        let extractedFoalDate = false; // Flag to stop after extracting the foal date
-        let extractedBreed = false; // Added flag to stop after extracting the breed
-        let shouldUpdateData = false; // Added flag to control when to update data
-        let hasPushedData = false; // Added flag to track if data has been pushed
         let owners = []; // Array to store multiple owners
+        const showDetails = [];
 
         lines.forEach((line, index) => {
             console.log(`Line ${index}:`, line); // Log each line with its index
@@ -92,6 +82,7 @@ async function extractDataFromPdf(pdfPath) {
                 currentHorse.breed = extractValue(line, 'Breed:');
             }
 
+            // Extract Owner at the Competition
             if (line.includes("Owner at the Competition:")) {
                 const ownerMatch = line.match(/Owner at the Competition:\s*(.*)/);
                 if (ownerMatch) {
@@ -99,60 +90,96 @@ async function extractDataFromPdf(pdfPath) {
                 }
             }
 
-            // // Extract Show and Event Information
-            // if (line.includes("Jumper Level")) {
-            //     currentShow = {
-            //         showID: extractValue(line, 'Show ID:'),
-            //         show: extractValue(line, 'Show:'),
-            //         jumperLevel: extractValue(line, 'Jumper Level:'),
-            //         state: extractValue(line, 'State:'),
-            //         zone: extractValue(line, 'Zone:')
-            //     };
-            // }
+            // Extract Show ID and Show Name
+            const showIdMatch = line.match(/(\d+)\s+(\d{4}\s+[A-Z\s]+)/);
+            if (showIdMatch) {
+                const showID = showIdMatch[1];
+                const show = showIdMatch[2];
+                showDetails.push({ showID, show, sectionDetails: [] });
+            }
 
-            // // Extract Competition Section Details (e.g., Class, Height, etc.)
-            // if (line.includes("SECTION:")) {
-            //     currentSection = {
-            //         section: extractValue(line, 'SECTION:'),
-            //         description: extractValue(line, 'DESCRIPTION:'),
-            //         height: extractValue(line, 'HEIGHT:'),
-            //         placing: extractValue(line, 'PLACING:'),
-            //         competed: extractValue(line, 'COMPETED:'),
-            //         money: extractValue(line, 'MONEY:'),
-            //         rider: extractValue(line, 'RIDER:'),
-            //         zrd: extractValue(line, 'ZRD:')
-            //     };
+            // Extract Jumper Level
+            if (line.includes("Jumper Level:")) {
+                const jumperLevelMatch = line.match(/Jumper Level:\s*(\d+)/);
+                if (jumperLevelMatch && showDetails.length > 0) {
+                    showDetails[showDetails.length - 1].jumperLevel = jumperLevelMatch[1];
+                }
+            }
 
-            //     // Add full competition row data
-            //     data.push({
-            //         ...currentHorse,
-            //         ...currentShow,
-            //         ...currentSection
-            //     });
-            // }
-           
+            // Extract State
+            if (line.includes("State:")) {
+                const stateMatch = line.match(/State:\s*([A-Z]{2})/);
+                if (stateMatch && showDetails.length > 0) {
+                    showDetails[showDetails.length - 1].state = stateMatch[1];
+                }
+            }
+
+            // Extract Zone
+            if (line.includes("Zone:")) {
+                const zoneMatch = line.match(/Zone:\s*(\d+)/);
+                if (zoneMatch && showDetails.length > 0) {
+                    showDetails[showDetails.length - 1].zone = zoneMatch[1];
+                }
+            }
+
+            // Extract Section Details
+            if (line.includes("SECTION:")) {
+                const sectionMatch = line.match(/SECTION:\s*(.*)/);
+                if (sectionMatch && showDetails.length > 0) {
+                    const section = sectionMatch[1].trim();
+                    currentSection = section;
+                    showDetails[showDetails.length - 1].sectionDetails.push({ section, rows: [] });
+                }
+            }
+            
+
+            
         });
 
+        // Populate the data array with all extracted details
         if (foundHorse) {
             owners.forEach(owner => {
-                data.push({
-                    ...currentHorse,
-                    owner: owner
+                showDetails.forEach(showDetail => {
+                    if (showDetail.sectionDetails && showDetail.sectionDetails.length > 0) {
+                        showDetail.sectionDetails.forEach(sectionDetail => {
+                            data.push({
+                                ...currentHorse,
+                                owner: owner,
+                                showID: showDetail.showID,
+                                show: showDetail.show,
+                                jumperLevel: showDetail.jumperLevel || 'N/A',
+                                state: showDetail.state || 'N/A',
+                                zone: showDetail.zone || 'N/A',
+                                section: sectionDetail.section || 'N/A'
+                            });
+                        });
+                    } else {
+                        // If no section details, add a row with just show details
+                        data.push({
+                            ...currentHorse,
+                            owner: owner,
+                            showID: showDetail.showID,
+                            show: showDetail.show,
+                            jumperLevel: showDetail.jumperLevel || 'N/A',
+                            state: showDetail.state || 'N/A',
+                            zone: showDetail.zone || 'N/A',
+                            section: 'N/A'
+                        });
+                    }
                 });
             });
         }
 
         // Write to CSV
-      const csvWriter = createCsvWriter({ path: outputFilePath, header: headers });
+        const csvWriter = createCsvWriter({ path: outputFilePath, header: headers });
         await csvWriter.writeRecords(data);
         console.log('CSV file written successfully');
-        
+
     } catch (error) {
         console.error('Error processing PDF:', error);
     }
 }
 
-// Helper function to extract values after a label
 // Helper function to extract values after a label
 function extractValue(line, label) {
     if (line.includes(label)) {
@@ -163,13 +190,13 @@ function extractValue(line, label) {
                 value = valuePart.split(/Dam:/)[0].trim();
                 break;
             case 'Dam:':
-                value = valuePart.split(/Microchip:/)[0].trim(); // Fix: Split at Microchip:
+                value = valuePart.split(/Microchip:/)[0].trim();
                 break;
             case 'Foal Date:':
                 value = valuePart.split(/Breed:/)[0].trim();
                 break;
             case 'Breed:':
-                value = valuePart.split(/Dam:|Microchip:/)[0].trim(); // Handle edge cases
+                value = valuePart.split(/Dam:|Microchip:/)[0].trim();
                 break;
             default:
                 value = valuePart;
@@ -179,5 +206,5 @@ function extractValue(line, label) {
     return '';
 }
 
-
+// Run the extraction
 extractDataFromPdf(inputPdfPath);
